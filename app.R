@@ -7,7 +7,7 @@ library(shinycssloaders)
 library(openai)
 
 sparql_endpoint <- "https://ldf.fi/semparl/sparql"
-ua <- httr::user_agent("https://github.com/tts/sparql")
+ua <- httr::user_agent("https://github.com/tts/puhe")
 
 sparql <- function(query, endpoint = sparql_endpoint, ...){
   enc_query <- gsub("\\+", "%2B", URLencode(query, reserved = TRUE))
@@ -56,7 +56,7 @@ ui <- function(request) {
       column(width = 3,
              uiOutput("dokws")),
       column(width = 9,
-             withSpinner(verbatimTextOutput("kws")))
+             withSpinner(verbatimTextOutput("kws"))) 
     ),
     fluidRow(),
     fluidRow(
@@ -195,7 +195,7 @@ server <- function(input, output, session) {
               selection = "single")
   )
   
-  # Construct the prompt: ignore the opening sentence and possible remarks, 
+  # Construct the prompt: ignore the opening sentence and possible remarks in square brackets, 
   # and take a substring of 1000 chars
   speech <- eventReactive(
     input$table_rows_selected, {
@@ -219,12 +219,13 @@ server <- function(input, output, session) {
       kwords <- create_completion(
         model = "text-davinci-003",
         max_tokens = 30,
-        prompt = paste0("Extract keywords from this text: ", speech())
+        prompt = paste0("Extract keywords from this text: ", speech()),
+        openai_api_key = "[your key]"
       )
     })
   
   # ... and print them
-  output$kws <- renderText({
+  output$kws <- renderPrint({ 
     kws()$choices$text
   })
   
@@ -240,7 +241,8 @@ server <- function(input, output, session) {
     input$dopic, {
       res <- create_image(
         prompt = kws()$choices$text,
-        size = "512x512"
+        size = "512x512",
+        openai_api_key = "[your key]"
       )
       tags$img(src = res$data$url)       
     }
