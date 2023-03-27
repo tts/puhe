@@ -37,17 +37,17 @@ ui <- function(request) {
     ),
     width = 300,
     sidebarMenu(
+      textInput(inputId = "search",
+                label = "Syötä hakusana",
+                placeholder = "esim. olkiluo*"),
+      actionButton("do", "Hae", width = "100px"),
+      hr(),
       HTML("<p id='info'>Haku palauttaa viisi uusinta puheenvuoroa<br/>
       1. Valitse jokin rivi</br>
       2. Siirry sivulle <b>Kuva</b></br>
       3. Hae tekstille asiasanoja</br>
       4. Muokkaa niistä virike (prompt)</br>
       5. Tee virikkeestä kuva</br></p>"),
-      hr(),
-      textInput(inputId = "search",
-                label = "Syötä hakusana",
-                placeholder = "esim. olkiluo*"),
-      actionButton("do", "Hae", width = "100px"),
       hr(),
       menuItem("Puheet", tabName = "main"),
       menuItem("Kuva", tabName = "kuva")
@@ -70,13 +70,13 @@ ui <- function(request) {
                 ),
               fluidRow(
                 column(width = 4,
-                       actionButton("dokws", "Tee asiasanat", width = "100%")),
+                       actionButton("do_kws", "Hae asiasanoja", width = "100%")),
                 column(width = 8,
                        withSpinner(uiOutput("kws")))
               ),
               fluidRow(
                 column(width = 4,
-                       actionButton("dopic", "Tee kuva", width = "100%")),
+                       actionButton("do_pic", "Tee kuva", width = "100%")),
                 column(width = 8,
                        withSpinner(uiOutput("pic")))
               )
@@ -88,13 +88,13 @@ ui <- function(request) {
     dashboardHeader(
       title = "Eduskuntapuheenvuorosta kuva (OpenAI)", titleWidth = "800",
       dropdownMenu(type = "messages",
-                   messageItem(from = "Lisätietoja:",
-                               message = "Lähde",
+                   messageItem(from = "Linkki",
+                               message = "Puheiden lähde",
                                href = "https://parlamenttisampo.fi/fi"),
-                   messageItem(from = "Lisätietoja:",
+                   messageItem(from = "Linkki",
                                message = "OpenAI",
                                href = "https://platform.openai.com/"),
-                   messageItem(from = "Lisätietoja:", 
+                   messageItem(from = "Linkki", 
                                message = "Tämän sovelluksen koodi",
                                href = "https://github.com/tts/puhe"))),
     sidebar,
@@ -106,8 +106,11 @@ ui <- function(request) {
 
 server <- function(input, output, session) {
   
-
-  # Escaping in the query needs 4 backslashes
+  # The SPARQL query is copied from the Yasqui editor linked from 
+  # https://parlamenttisampo.fi/fi/speeches/faceted-search/table?page=0
+  # Changes to the original code are commented with "ttso:" below.
+  #
+  # Note that escaping in the query needs 4 backslashes
   # https://github.com/eclipse/rdf4j/issues/1105#issuecomment-652204116
   
   result <- eventReactive(
@@ -213,14 +216,14 @@ server <- function(input, output, session) {
               selection = "single")
   )
   
-  
   # Start the prompt building process when a row is clicked. First, edit the speech:
   # ignore the first greeting sentence and possible remarks in square brackets, 
-  # remove newlines, trim, and take a substring of 1000 chars (OpenAI max)
+  # remove newlines, trim, and take a substring of 1000 chars (OpenAI API max)
   speech <- eventReactive(
     input$table_rows_selected, {
       r <- input$table_rows_selected
-      if (length(r)) { s <- toString(result()[r, "puhe"]) }
+      if (length(r)) { rs <- toString(result()[r, "puhe"]) }
+      s <- gsub("</?b>", "", rs)
       s_nopre <- gsub("^[^!]*! ", "", s)
       s_nobrack <- gsub("\\[.*?\\]", "", s_nopre)
       s_1000raw <- substr(s_nobrack, 1, 1000) 
@@ -230,9 +233,12 @@ server <- function(input, output, session) {
   
   output$speech <- renderText(speech())
   
+  # FIXME: when a new row from the table is selected and the speech() is changed,
+  # clear or remove output$kws and output$pic
+  
   # Then, when 'dokws' is clicked, create the keywords from the 1000 char string
   keywords <- eventReactive(
-    input$dokws, {
+    input$do_kws, {
       kwords <- create_completion(
         model = "text-davinci-003",
         max_tokens = 60,
@@ -244,7 +250,6 @@ server <- function(input, output, session) {
         openai_api_key = "[your key]"
       )
     })
-
   
   # and render them for the user to check and edit
   output$kws <- renderUI({
@@ -258,7 +263,7 @@ server <- function(input, output, session) {
   
   # When 'dopic' is clicked, create the pic from the prompt 
   picresult <- eventReactive(
-    input$dopic, {
+    input$do_pic, {
       res <- create_image(
         prompt = input$kws,
         size = "512x512",
@@ -273,7 +278,6 @@ server <- function(input, output, session) {
     tabItem(tabName = "kuva",
             picresult())
   })
-  
   
 }
 
