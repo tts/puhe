@@ -37,20 +37,20 @@ ui <- function(request) {
     ),
     width = 300,
     sidebarMenu(
-      menuItem("Puheet", tabName = "main"),
-      menuItemOutput("menuitem"),
-      hr(),
       HTML("<p id='info'>Haku palauttaa viisi uusinta puheenvuoroa<br/>
       1. Valitse jokin rivi</br>
       2. Siirry sivulle <b>Kuva</b></br>
-      3. Hae asiasanoja</br>
+      3. Hae tekstille asiasanoja</br>
       4. Muokkaa niistä virike (prompt)</br>
       5. Tee virikkeestä kuva</br></p>"),
       hr(),
       textInput(inputId = "search",
                 label = "Syötä hakusana",
                 placeholder = "esim. olkiluo*"),
-      actionButton("do", "Hae", width = "100px")
+      actionButton("do", "Hae", width = "100px"),
+      hr(),
+      menuItem("Puheet", tabName = "main"),
+      menuItem("Kuva", tabName = "kuva")
     ))
   
   body <- dashboardBody(
@@ -64,14 +64,19 @@ ui <- function(request) {
       ),
       tabItem(tabName = "kuva",
               fluidRow(
+                column(width = 12,
+                       box(title = "Valitun puheen alku", width = "100%", height = "230px",
+                           textOutput("speech")))
+                ),
+              fluidRow(
                 column(width = 4,
-                       uiOutput("dokws")),
+                       actionButton("dokws", "Tee asiasanat", width = "100%")),
                 column(width = 8,
                        withSpinner(uiOutput("kws")))
               ),
               fluidRow(
                 column(width = 4,
-                       uiOutput("dopic")),
+                       actionButton("dopic", "Tee kuva", width = "100%")),
                 column(width = 8,
                        withSpinner(uiOutput("pic")))
               )
@@ -101,8 +106,7 @@ ui <- function(request) {
 
 server <- function(input, output, session) {
   
-  v <- reactiveValues(data = NULL)
-  
+
   # Escaping in the query needs 4 backslashes
   # https://github.com/eclipse/rdf4j/issues/1105#issuecomment-652204116
   
@@ -189,7 +193,7 @@ server <- function(input, output, session) {
         select(id.value, content.value)
       
       s <- sub("\\*", "", input$search)
-
+      
       df_cleaned <- res_df %>% 
         group_by(id.value, .drop = FALSE) %>% 
         fill(content.value, .direction = "downup") %>% 
@@ -199,7 +203,7 @@ server <- function(input, output, session) {
         mutate(id = sub("http://ldf.fi/semparl/speeches/", "https://parlamenttisampo.fi/speeches/page/", id),
                id = paste0('<a href="',id,'" target="_blank">', id, '</a>'),
                puhe = gsub(paste0("(.*?)(",s,")(.*?)"), "\\1<b>\\2</b>\\3", puhe, ignore.case = T))
-
+      
       df_distinct <- distinct(df_cleaned, id, .keep_all = TRUE)
     })
   
@@ -209,9 +213,10 @@ server <- function(input, output, session) {
               selection = "single")
   )
   
+  
   # Start the prompt building process when a row is clicked. First, edit the speech:
-  # ignore the opening, greeting sentence and possible remarks (in square brackets), 
-  # remove newlines, trim, and take a substring of 1000 chars
+  # ignore the first greeting sentence and possible remarks in square brackets, 
+  # remove newlines, trim, and take a substring of 1000 chars (OpenAI max)
   speech <- eventReactive(
     input$table_rows_selected, {
       r <- input$table_rows_selected
@@ -221,28 +226,12 @@ server <- function(input, output, session) {
       s_1000raw <- substr(s_nobrack, 1, 1000) 
       s_1000raw_norn <- gsub("[\r\n]", "", s_1000raw)
       s_1000 <- trimws(s_1000raw_norn, which = "both")
-      iconv(s_1000, from = "ISO-8859-1", to = "UTF-8")
-    })
+      })
   
-  # Second, add a new menu item 'Kuva', and render there an action button 'dokws'
-  observeEvent(input$table_rows_selected, {
-    
-    output$menuitem <- renderMenu({
-      menuItem("Kuva", tabName = "kuva", badgeLabel = "Siirry tänne", badgeColor = "green")
-    })
-    
-    output$dokws <- renderUI(NULL)
-    output$dopic <- renderUI(NULL)
-
-    output$dokws <- renderUI({
-      tabItem(tabName = "kuva",
-              actionButton("dokws", label = "Hae puheelle avainsanoja (OpenAI)", width = "250px")
-      )
-    })
-  })
+  output$speech <- renderText(speech())
   
-  # Third, when 'dokws' is clicked, create the keywords from the 1000 char string
-  kws <- eventReactive(
+  # Then, when 'dokws' is clicked, create the keywords from the 1000 char string
+  keywords <- eventReactive(
     input$dokws, {
       kwords <- create_completion(
         model = "text-davinci-003",
@@ -256,30 +245,21 @@ server <- function(input, output, session) {
       )
     })
 
-  # ... and finally render them for the user to check and edit
-  output$kws <- renderUI({ 
+  
+  # and render them for the user to check and edit
+  output$kws <- renderUI({
     tabItem(tabName = "kuva",
             textAreaInput(inputId = "kws",
-                          label = "Muokkaa tästä virike (prompt)",
-                          value = trimws(kws()$choices$text, which = "both"),
+                          label = "Muokkaa näistä virike (prompt)",
+                          value = trimws(keywords()$choices$text, which = "both"),
                           resize = "both", width = "80%", height = "100px"))
   })
-  
-  # When we have keywords, render an action button 'dopic' for starting the pic making process
-  observeEvent(input$kws, { 
-    
-    output$dopic <- renderUI(NULL)
 
-    output$dopic <- renderUI({
-      tabItem(tabName = "kuva",
-              actionButton("dopic", label = "Tee virikkeestä kuva (OpenAI)", width = "250px"))
-    })
-  })
   
   # When 'dopic' is clicked, create the pic from the prompt 
   picresult <- eventReactive(
     input$dopic, {
-     res <- create_image(
+      res <- create_image(
         prompt = input$kws,
         size = "512x512",
         openai_api_key = "[your key]"
@@ -288,11 +268,12 @@ server <- function(input, output, session) {
     }
   )
   
-  # ... and render it
+  # and render it
   output$pic <- renderUI({
     tabItem(tabName = "kuva",
             picresult())
   })
+  
   
 }
 
