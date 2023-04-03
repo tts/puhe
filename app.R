@@ -33,7 +33,8 @@ ui <- function(request) {
   sidebar <- dashboardSidebar(
     tags$head(
       tags$style(HTML('#do{background-color:orange}')),
-      tags$style(HTML('#info{margin-left:20px}'))
+      tags$style(HTML('#info{margin-left:20px}')),
+      tags$style(HTML('.btn:focus {background: wheat !important;}'))
     ),
     width = 300,
     sidebarMenu(
@@ -50,7 +51,9 @@ ui <- function(request) {
       5. Tee virikkeestä kuva</br></p>"),
       hr(),
       menuItem("Puheet", tabName = "main"),
-      menuItem("Kuva", tabName = "kuva")
+      menuItem("Kuva", tabName = "kuva"),
+      hr(),
+      actionButton("reset", "Tyhjennä asiasanat ja kuva", width = "250px")
     ))
   
   body <- dashboardBody(
@@ -70,15 +73,15 @@ ui <- function(request) {
                 ),
               fluidRow(
                 column(width = 4,
-                       actionButton("do_kws", "Hae asiasanoja", width = "100%")),
+                       actionButton("do_kws", "Hae asiasanoja (kesto <5 sek)", width = "100%")),
                 column(width = 8,
-                       withSpinner(uiOutput("kws")))
+                       tags$div(id = "placeholder_kw"))
               ),
               fluidRow(
                 column(width = 4,
-                       actionButton("do_pic", "Tee kuva", width = "100%")),
+                       actionButton("do_pic", "Tee kuva (kesto <5 sek)", width = "100%")),
                 column(width = 8,
-                       withSpinner(uiOutput("pic")))
+                       tags$div(id = "placeholder_pic"))
               )
       )
     )
@@ -113,8 +116,16 @@ server <- function(input, output, session) {
   # Note that escaping in the query needs 4 backslashes
   # https://github.com/eclipse/rdf4j/issues/1105#issuecomment-652204116
   
+  rv <- reactiveValues()
+  
+  # https://github.com/rstudio/shiny/issues/1679#issuecomment-297056251
+  divID <- gsub("\\.", "", format(Sys.time(), "%H%M%OS3"))
+  
   result <- eventReactive(
     input$do, {
+      
+      req(input$search)
+      
       q <- paste0('
   PREFIX dct: <http://purl.org/dc/terms/>
   PREFIX semparls: <http://ldf.fi/schema/semparl/>
@@ -233,50 +244,64 @@ server <- function(input, output, session) {
   
   output$speech <- renderText(speech())
   
-  # FIXME: when a new row from the table is selected and the speech() is changed,
-  # clear or remove output$kws and output$pic
-  
-  # Then, when 'dokws' is clicked, create the keywords from the 1000 char string
-  keywords <- eventReactive(
-    input$do_kws, {
-      kwords <- create_completion(
-        model = "text-davinci-003",
-        max_tokens = 60,
-        temperature = 0.5,
-        top_p = 1,
-        frequency_penalty = 0.8,
-        presence_penalty = 0,
-        prompt = paste0("Extract keywords from this text:", speech()),
-        openai_api_key = "[your key]"
-      )
-    })
-  
-  # and render them for the user to check and edit
-  output$kws <- renderUI({
-    tabItem(tabName = "kuva",
-            textAreaInput(inputId = "kws",
-                          label = "Muokkaa näistä virike (prompt)",
-                          value = trimws(keywords()$choices$text, which = "both"),
-                          resize = "both", width = "80%", height = "100px"))
+  # Then, when 'do_kws' is clicked, extract keywords from the 1000 char string
+  observeEvent(input$do_kws, {
+    
+    req(speech())
+    
+    this_id <- paste0(divID, "kw")
+    
+    kwords <- create_completion(
+      model = "text-davinci-003",
+      max_tokens = 60,
+      temperature = 0.5,
+      top_p = 1,
+      frequency_penalty = 0.8,
+      presence_penalty = 0,
+      prompt = paste0("Extract keywords from this text:", speech()),
+      openai_api_key = "[your key]"
+    )
+    
+    insertUI("#placeholder_kw", "afterEnd", 
+               ui = tags$div(
+                 id = this_id,
+                 textAreaInput(inputId = "kws", 
+                               label = "Muokkaa näistä virike (prompt)", 
+                               value = trimws(kwords$choices$text, which = "both"),
+                               resize = "both",
+                               width = "80%", height = "100px"))) 
+    
+    rv$divID <- this_id
+    
   })
+  
 
+  # When 'do_pic' is clicked, create the pic from the prompt and render it
+  observeEvent(input$do_pic, {
+    
+    req(input$kws)
+    
+    this_id <- paste0(divID, "pic")
+    
+    res <- create_image(
+            prompt = input$kws,
+            size = "512x512",
+            openai_api_key = "[your key]"
+          )
+
+    insertUI("#placeholder_pic", "afterEnd",
+             ui = tags$div(
+               id = this_id,
+               tags$img(src = res$data$url)
+             )) 
+    
+    rv$divID <- this_id
+          
+  })
   
-  # When 'dopic' is clicked, create the pic from the prompt 
-  picresult <- eventReactive(
-    input$do_pic, {
-      res <- create_image(
-        prompt = input$kws,
-        size = "512x512",
-        openai_api_key = "[your key]"
-      )
-      tags$img(src = res$data$url)       
-    }
-  )
-  
-  # and render it
-  output$pic <- renderUI({
-    tabItem(tabName = "kuva",
-            picresult())
+  observeEvent(input$reset,{
+    removeUI(paste0("#", divID, "kw"))
+    removeUI(paste0("#", divID, "pic"))
   })
   
 }
