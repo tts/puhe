@@ -68,18 +68,17 @@ ui <- function(request) {
       tabItem(tabName = "kuva",
               fluidRow(
                 column(width = 12,
-                       box(title = "Valitun puheen alku", width = "100%", height = "230px",
-                           textOutput("speech")))
+                       box(title = "Valitun puheen alku", width = "100%", height = "230px", textOutput("speech")))
                 ),
               fluidRow(
                 column(width = 4,
-                       actionButton("do_kws", "Hae asiasanoja (kesto <5 sek)", icon = icon("hourglass-half"), width = "100%")),
+                      tags$div(id = "placeholder_do_kw")),
                 column(width = 8,
                        tags$div(id = "placeholder_kw"))
               ),
               fluidRow(
                 column(width = 4,
-                       actionButton("do_pic", "Tee kuva (kesto <5 sek)", icon = icon("hourglass-half"), width = "100%")),
+                      tags$div(id = "placeholder_do_pic")),
                 column(width = 8,
                        tags$div(id = "placeholder_pic"))
               )
@@ -89,15 +88,15 @@ ui <- function(request) {
   
   dashboardPage(
     dashboardHeader(
-      title = "Eduskuntapuheenvuorosta kuva (OpenAI)", titleWidth = "800",
+      title = "Eduskuntapuheenvuorosta asiasanat, asiasanoista kuva", titleWidth = "800",
       dropdownMenu(type = "messages",
-                   messageItem(from = "Linkki",
-                               message = "Puheiden lähde",
+                   messageItem(from = "-",
+                               message = "parlamenttisampo.fi",
                                href = "https://parlamenttisampo.fi/fi"),
-                   messageItem(from = "Linkki",
+                   messageItem(from = "-",
                                message = "OpenAI",
                                href = "https://platform.openai.com/"),
-                   messageItem(from = "Linkki", 
+                   messageItem(from = "-", 
                                message = "Tämän sovelluksen koodi",
                                href = "https://github.com/tts/puhe"))),
     sidebar,
@@ -227,11 +226,11 @@ server <- function(input, output, session) {
               selection = "single")
   )
   
-  # Start the prompt building process when a row is clicked. First, edit the speech:
+  # Start the prompt building process when a row is clicked. Edit the speech:
   # ignore the first greeting sentence and possible remarks in square brackets, 
   # remove newlines, trim, and take a substring of 1000 chars (OpenAI API max)
-  speech <- eventReactive(
-    input$table_rows_selected, {
+  speech <- eventReactive(input$table_rows_selected, {
+    
       r <- input$table_rows_selected
       if (length(r)) { rs <- toString(result()[r, "puhe"]) }
       s <- gsub("</?b>", "", rs)
@@ -240,16 +239,38 @@ server <- function(input, output, session) {
       s_1000raw <- substr(s_nobrack, 1, 1000) 
       s_1000raw_norn <- gsub("[\r\n]", "", s_1000raw)
       s_1000 <- trimws(s_1000raw_norn, which = "both")
+      
       })
   
+  # Render the string 
   output$speech <- renderText(speech())
+
+  # If another row is selected, remove all previous divIDs containing a 'do_kw' button
+  # and render a new one
+  observeEvent(input$table_rows_selected, {
+    
+    req(result())
   
-  # Then, when 'do_kws' is clicked, extract keywords from the 1000 char string
+    removeUI(paste0("#", divID, "do_kw"))
+    
+    this_button_id <- paste0(divID, "do_kw")
+    
+    insertUI("#placeholder_do_kw", "afterEnd", 
+             ui = tags$div(
+               id = this_button_id,
+               actionButton(inputId = "do_kws",label = "Hae asiasanoja (kesto <5 sek)", 
+                            icon = icon("hourglass-half"), width = "100%")))
+    
+    rv$divID <- this_button_id
+    
+  })
+  
+  
+  # When 'do_kws' is clicked, extract keywords from the 1000 char string,
+  # and render them to a text area. Also, render the action button 'do_pic'.
   observeEvent(input$do_kws, {
     
     req(speech())
-    
-    this_id <- paste0(divID, "kw")
     
     kwords <- create_completion(
       model = "text-davinci-003",
@@ -262,6 +283,8 @@ server <- function(input, output, session) {
       openai_api_key = "[your key]"
     )
     
+    this_id <- paste0(divID, "kw")
+    
     insertUI("#placeholder_kw", "afterEnd", 
              ui = tags$div(
                id = this_id,
@@ -273,13 +296,27 @@ server <- function(input, output, session) {
     
     rv$divID <- this_id
     
+    # Button
+    removeUI(paste0("#", divID, "do_pic"))
+    
+    this_button_id <- paste0(divID, "do_pic")
+    
+    insertUI("#placeholder_do_pic", "afterEnd", 
+             ui = tags$div(
+               id = this_button_id,
+               actionButton(inputId = "do_pic",label = "Tee kuva (kesto <5 sek)", 
+                            icon = icon("hourglass-half"), width = "100%")))
+    
+    rv$divID <- this_button_id
+    
   })
   
-
   # When 'do_pic' is clicked, create the pic from the prompt and render it
   observeEvent(input$do_pic, {
     
     req(input$kws)
+    
+    removeUI(paste0("#", divID, "pic"))
     
     this_id <- paste0(divID, "pic")
     
@@ -299,7 +336,9 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$reset,{
+    removeUI(paste0("#", divID, "do_kw"))
     removeUI(paste0("#", divID, "kw"))
+    removeUI(paste0("#", divID, "do_pic"))
     removeUI(paste0("#", divID, "pic"))
   })
   
