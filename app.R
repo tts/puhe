@@ -50,10 +50,10 @@ ui <- function(request) {
       4. Muokkaa niistä virike (prompt)</br>
       5. Tee virikkeestä kuva</br></p>"),
       hr(),
-      menuItem("Puheet", tabName = "main"),
-      menuItem("Kuva", tabName = "kuva"),
+      menuItem("Puheet", tabName = "main", icon = icon("table")),
+      menuItem("Kuva", tabName = "kuva", icon = icon("image")),
       hr(),
-      actionButton("reset", "Tyhjennä asiasanat ja kuva", width = "250px")
+      actionButton("reset", "Tyhjennä asiasanat ja kuva", icon = icon("trash"), width = "250px")
     ))
   
   body <- dashboardBody(
@@ -73,13 +73,13 @@ ui <- function(request) {
                 ),
               fluidRow(
                 column(width = 4,
-                       actionButton("do_kws", "Hae asiasanoja (kesto <5 sek)", width = "100%")),
+                       actionButton("do_kws", "Hae asiasanoja (kesto <5 sek)", icon = icon("hourglass-half"), width = "100%")),
                 column(width = 8,
                        tags$div(id = "placeholder_kw"))
               ),
               fluidRow(
                 column(width = 4,
-                       actionButton("do_pic", "Tee kuva (kesto <5 sek)", width = "100%")),
+                       actionButton("do_pic", "Tee kuva (kesto <5 sek)", icon = icon("hourglass-half"), width = "100%")),
                 column(width = 8,
                        tags$div(id = "placeholder_pic"))
               )
@@ -263,13 +263,13 @@ server <- function(input, output, session) {
     )
     
     insertUI("#placeholder_kw", "afterEnd", 
-               ui = tags$div(
-                 id = this_id,
-                 textAreaInput(inputId = "kws", 
-                               label = "Muokkaa näistä virike (prompt)", 
-                               value = trimws(kwords$choices$text, which = "both"),
-                               resize = "both",
-                               width = "80%", height = "100px"))) 
+             ui = tags$div(
+               id = this_id,
+               textAreaInput(inputId = "kws", 
+                             label = "Muokkaa näistä virike (prompt)", 
+                             value = trimws(kwords$choices$text, which = "both"),
+                             resize = "both",
+                             width = "80%", height = "100px"))) 
     
     rv$divID <- this_id
     
@@ -292,8 +292,7 @@ server <- function(input, output, session) {
     insertUI("#placeholder_pic", "afterEnd",
              ui = tags$div(
                id = this_id,
-               tags$img(src = res$data$url)
-             )) 
+               tags$img(src = res$data$url))) 
     
     rv$divID <- this_id
           
@@ -305,7 +304,6 @@ server <- function(input, output, session) {
   })
   
 }
-
 
 shinyApp(ui = ui, server = server)
 
