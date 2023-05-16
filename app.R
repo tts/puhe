@@ -34,6 +34,7 @@ ui <- function(request) {
     tags$head(
       tags$style(HTML('#do{background-color:orange}')),
       tags$style(HTML('#info{margin-left:20px}')),
+      tags$style(HTML('#huom{margin-left:20px}')),
       tags$style(HTML('.btn:focus {background: wheat !important;}'))
     ),
     width = 300,
@@ -42,6 +43,8 @@ ui <- function(request) {
                 label = "Syötä hakusana",
                 placeholder = "esim. olkiluo*"),
       actionButton("do", "Hae", width = "100px"),
+      hr(),
+      HTML("<p id='huom' style='color: red;'>Ei asiasanoitusta ja kuvaa 1.5.2023 alkaen.</p>"),
       hr(),
       HTML("<p id='info'>Haku palauttaa viisi uusinta puheenvuoroa<br/>
       1. Valitse jokin rivi</br>
